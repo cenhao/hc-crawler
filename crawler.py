@@ -95,7 +95,6 @@ for i in xrange(0, thread_num):
     threads.append(threading.Thread(target=download))
     threads[i].start()
 
-conn = httplib.HTTPConnection(host, timeout=3)
 
 try:
     while url not in visited_url:
@@ -103,6 +102,7 @@ try:
             try:
                 cnt += 1
                 visited_url[url] = True
+                conn = httplib.HTTPConnection(host, timeout=2)
                 conn.request('GET', url)
                 res = conn.getresponse()
                 if res.status != 200:
@@ -118,10 +118,11 @@ try:
                 queue.append((cnt, pic))
                 job_cond.notify()
                 job_cond.release()
+                conn.close()
                 break
             except (httplib.HTTPException, socket.timeout), e:
                 output_lock.acquire()
-                print >> sys.stderr, '[%s] Main %d failed, url[%s]' % (e, cnt, url)
+                print >> sys.stderr, '[%s] Main %d failed, url[%s]' % (type(e), cnt, url)
                 output_lock.release()
 except KeyboardInterrupt, e:
     job_cond.acquire()
