@@ -13,7 +13,6 @@ usage =\
 '''Usage:
     crawler.py -h
     crawler.py [-t <thread num>] [-p <path>] init_url'''
-visited_url = {}
 thread_num = 1
 path = ''
 
@@ -55,6 +54,7 @@ host, init_url = args[0].split('/')
 url = '/' + init_url
 
 def download():
+    conn = None
     while True:
         job_cond.acquire()
         while len(queue) <= 0:
@@ -68,20 +68,25 @@ def download():
             return
         while True:
             try:
-                conn = httplib.HTTPConnection(host, timeout=2)
+                if not conn:
+                    conn = httplib.HTTPConnection(host, timeout=2)
                 conn.request('GET', url)
                 res = conn.getresponse()
                 if res.status != 200:
                     output_lock.acquire()
                     print >> sys.stderr, '[http:%d]Get page %d failed, url[%s]' % (res.status, page, url)
                     output_lock.release()
+                    conn.close()
+                    conn = None
                     continue
                 buff = res.read()
                 break
             except (httplib.HTTPException, socket.timeout), e:
                 output_lock.acquire()
-                print >> sys.stderr, '[%s]Get Page %d failed, url[%s]' % (e, page, url)
+                print >> sys.stderr, '[%s]Get Page %d failed, url[%s]' % (type(e), page, url)
                 output_lock.release()
+                conn.close()
+                conn = None
                 continue
 
         filetype = url.split('.')[-1]
@@ -95,20 +100,25 @@ for i in xrange(0, thread_num):
     threads.append(threading.Thread(target=download))
     threads[i].start()
 
+visited_url = {}
 
 try:
+    conn = None
     while url not in visited_url:
         while True:
             try:
                 cnt += 1
                 visited_url[url] = True
-                conn = httplib.HTTPConnection(host, timeout=2)
+                if not conn:
+                    conn = httplib.HTTPConnection(host, timeout=2)
                 conn.request('GET', url)
                 res = conn.getresponse()
                 if res.status != 200:
                     output_lock.acquire()
                     print >> sys.stderr, '[http:%d] Main %d failed, url[%s]' % (res.status, cnt, url)
                     output_lock.release()
+                    conn.close()
+                    conn = None
                     continue
                 matched = pattern.search(res.read())
                 url = matched.group(1)
@@ -118,12 +128,13 @@ try:
                 queue.append((cnt, pic))
                 job_cond.notify()
                 job_cond.release()
-                conn.close()
                 break
             except (httplib.HTTPException, socket.timeout), e:
                 output_lock.acquire()
                 print >> sys.stderr, '[%s] Main %d failed, url[%s]' % (type(e), cnt, url)
                 output_lock.release()
+                conn.close()
+                conn = None
 except KeyboardInterrupt, e:
     job_cond.acquire()
     for i in xrange(0, thread_num):
